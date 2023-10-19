@@ -3,19 +3,18 @@ import numpy as np
 
 from image_data import  ImageData
 
-class FeaturesManipulator:
+class FeatureManipulator:
     def __init__(self):
         self.sift = cv.SIFT_create()
 
         FLANN_INDEX_KDTREE = 0
         index_params = dict(algorithm=FLANN_INDEX_KDTREE, trees=5)
         search_params = dict(checks=50)
-
-        # FLANN based matcher with implementation of k nearest neighbour.
         self._matcher = cv.FlannBasedMatcher(index_params, search_params)
+        self.iteration = 0
 
     def get_matches(self, kp1, des1, kp2, des2):
-        matches_rough = filter(lambda m: m[0].distance < m[1].distance * 0.7, self._matcher.knnMatch(des1, des2, k = 2))
+        matches_rough = filter(lambda m: m[0].distance < m[1].distance * 0.6, self._matcher.knnMatch(des1, des2, k = 2))
         matches = map(lambda m:m[0], matches_rough)
         matches = sorted(matches, key = lambda m: m.distance)
 
@@ -29,6 +28,7 @@ class FeaturesManipulator:
         image_points2 = np.array([kp.pt for kp in kp2_aligned])
 
         self._matcher.clear()
+        self.iteration += 1
 
         return image_points1, image_points2, image_idx1, image_idx2
 
@@ -54,10 +54,12 @@ class FeaturesManipulator:
         self._matcher.clear()
 
         matches_3d_2d = sorted(matches_3d_2d, key = lambda m: m.distance)
-
-        posible_good_lenght = int(len(matches_3d_2d) * (3.0 / prev_images_count))
+        posible_good_lenght = int(len(matches_3d_2d) / ((4.0 + 2.0 / self.iteration ) * self.iteration))
         matches_threshold = 12
         lenght = posible_good_lenght if posible_good_lenght > matches_threshold else matches_threshold
+
         matches_3d_2d = matches_3d_2d[: lenght]
+        matches_3d_2d = list(filter(lambda m: m.distance < 105.0, matches_3d_2d))
+        self.iteration += 1
 
         return matches_3d_2d

@@ -2,31 +2,31 @@ import cv2 as cv
 import numpy as np
 
 from image_data import  ImageData
-from features_manipulator import  FeaturesManipulator
+from features_manipulator import  FeatureManipulator
 from pair_data import  PairData
 
 class PoseEstimator:
     cache:dict[ImageData]
-    features_manipulator:FeaturesManipulator
+    feature_manipulator:FeatureManipulator
     K = None
 
-    def __init__(self, cache:dict[ImageData], features_manipulator:FeaturesManipulator, K):
+    def __init__(self, cache:dict[ImageData], feature_manipulator:FeatureManipulator, K):
         self.cache = cache
-        self.features_manipulator = features_manipulator
+        self.feature_manipulator = feature_manipulator
         self.K = K
 
     def initial_run(self, image_name1:str, image_name2:str):
         image1_mat = cv.imread(image_name1)
         image2_mat = cv.imread(image_name2)
-        kp1, des1 = self.features_manipulator.get_features(image1_mat)
-        kp2, des2 = self.features_manipulator.get_features(image2_mat)
+        kp1, des1 = self.feature_manipulator.get_features(image1_mat)
+        kp2, des2 = self.feature_manipulator.get_features(image2_mat)
 
-        image_data1 = self.cache[image_name1] = ImageData(kp1, des1)
-        image_data2 = self.cache[image_name2] = ImageData(kp2, des2)
+        image_data1 = self.cache[image_name1] = ImageData(kp1, des1, image1_mat)
+        image_data2 = self.cache[image_name2] = ImageData(kp2, des2, image2_mat)
 
-        image_points1, image_points2, image_idx1, image_idx2 = self.features_manipulator.get_matches(kp1, des1, kp2, des2)
+        image_points1, image_points2, image_idx1, image_idx2 = self.feature_manipulator.get_matches(kp1, des1, kp2, des2)
 
-        F, mask = cv.findFundamentalMat(image_points1, image_points2, cv.FM_RANSAC, 0.1, 0.99)
+        F, mask = cv.findFundamentalMat(image_points1, image_points2, cv.FM_RANSAC, 0.2, 0.99)
 
         mask = mask.astype(bool).flatten()
 
@@ -50,9 +50,9 @@ class PoseEstimator:
 
     def run(self, image_name, point_cloud, image_names):
         image_mat = cv.imread(image_name)
-        kp, des = self.features_manipulator.get_features(image_mat)
+        kp, des = self.feature_manipulator.get_features(image_mat)
 
-        matches_3d_2d = self.features_manipulator.find_3d_matches(kp, des, self.cache)
+        matches_3d_2d = self.feature_manipulator.find_3d_matches(kp, des, self.cache)
 
         points_3d, points_2d = np.zeros((0, 3)), np.zeros((0, 2))
 
@@ -72,7 +72,7 @@ class PoseEstimator:
         _, R, t, _ = cv.solvePnPRansac(points_3d[:,np.newaxis], points_2d[:,np.newaxis], self.K, None, confidence=.99,flags=cv.SOLVEPNP_DLS, reprojectionError = 8.)
 
         R,_ = cv.Rodrigues(R)
-        image_data = self.cache[image_name] = ImageData(kp, des)
+        image_data = self.cache[image_name] = ImageData(kp, des, image_mat)
         image_data.R, image_data.t, image_data.refs = R, t, np.ones((len(kp),)) * -1
 
         return R, t, matches_3d_2d

@@ -3,6 +3,7 @@ import cv2 as cv
 
 from image_data import  ImageData
 from pair_data import  PairData
+from utility_fucntions import error_mini
 
 class PointCloudGenerator:
     def __init__(self, K):
@@ -48,9 +49,10 @@ class PointCloudGenerator:
 
         added_num = points_3d.shape[0]
         offset = self.point_cloud.shape[0] - added_num
+        ranges = np.arange(added_num) + offset
 
-        image_data1.refs[pair_data.image_idx1] = np.arange(added_num) + offset
-        image_data2.refs[pair_data.image_idx2] = np.arange(added_num) + offset
+        image_data1.refs[pair_data.image_idx1] = ranges
+        image_data2.refs[pair_data.image_idx2] = ranges
 
     def render(self, image_name: str, image_names: list[str], cache: dict[ImageData], matches_3d_2d):
         image_data = cache[image_name]
@@ -61,7 +63,7 @@ class PointCloudGenerator:
                 prev_refs = prev_image_data.refs
                 matches = [match for match in matches_3d_2d if image_names[match.imgIdx] == prev_image_name
                            and prev_refs[match.trainIdx] < 0]
-
+                print("New points " + str(len(matches)))
                 if len(matches) > 8:
                     def __get_good_matches(matches):
                         matches = sorted(matches, key = lambda m:m.distance)
@@ -85,3 +87,26 @@ class PointCloudGenerator:
                     pair_data = PairData(points_prev_image[mask], points_image[mask], prev_image_idx[mask], image_idx[mask])
 
                     self.initial_render(prev_image_data, image_data, pair_data)
+
+    def dry_render(self, image_data1, image_data2, image_points1, image_points2):
+        image_points_hom1 = cv.convertPointsToHomogeneous(image_points1)[:, 0, :]
+        image_points_hom2 = cv.convertPointsToHomogeneous(image_points2)[:, 0, :]
+
+        image_points_norm1 = (self.K_Inv.dot(image_points_hom1.T)).T
+        image_points_norm2 = (self.K_Inv.dot(image_points_hom2.T)).T
+
+        image_points_norm1 = cv.convertPointsFromHomogeneous(image_points_norm1)[:, 0, :]
+        image_points_norm2 = cv.convertPointsFromHomogeneous(image_points_norm2)[:, 0, :]
+
+        points_4d = cv.triangulatePoints(
+            np.hstack((image_data1.R, image_data1.t)),
+            np.hstack((image_data2.R, image_data2.t)),
+            image_points_norm1.T,
+            image_points_norm2.T
+        )
+
+        points_3d = cv.convertPointsFromHomogeneous(points_4d.T)[:, 0, :]
+        self.point_cloud = np.concatenate((self.point_cloud, points_3d), axis=0)
+        print("err1 mini:" + str(error_mini(self.K, image_data1.R, image_data1.t, points_3d, image_points1)))
+        print("err2 mini:" + str(error_mini(self.K, image_data2.R, image_data2.t, points_3d, image_points2)))
+
